@@ -12,5 +12,5 @@ task :console do
 end
 
 task :rspec do
-  exec 'rspec spec/wind_up_spec.rb -f doc --color'
+  exec "rspec -f doc --color"
 end

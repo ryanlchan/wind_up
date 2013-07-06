@@ -1,102 +1,51 @@
-# Inspired by Mike Perham's Sidekiq::Fetcher class, this queue will initialize
-# our pool of workers through SuckerPunch, then continuously retrieve jobs
-# through the specified storage strategy
+# Singleton queuing interface
 module WindUp
-  class Queue
-    include WindUp::Worker
-    attr_reader :name
+  module Queue
+    def self.included(base)
+      base.send(:include, Worker)
+      base.send(:include, Singleton)
+      base.extend(ClassMethods)
+    end
 
-    # Ugly hack to get our configuration DSL to execute properly
-    # Celluloid will wrap any block in a BlockProxy object, which creates a
-    # new context around the DSL. This macro allows us to circumvent the
-    # BlockProxy wrapper and execute on our object context
-    execute_block_on_receiver :initialize
-
-    # Initialize a new Queue
-    # @param options [Hash] the options to initialize with
-    # @param &block [Hash] a configuration block using WindUp's DSL
-    # @option options [String] :name name to use with SuckerPunch
-    # @option options [Hash] :default_priority_level priority level to use if none given
-
-    # @note Set either :worker/:workers or :pool; pool takes priority when both are set
-    # @option options [Class] :worker the worker to use
-    # @option options [Integer] :workers the number of workers to use
-    # @option options [Celluloid::Pool] :pool use an existing pool of workers
-
-    # @note Redis store will attempt to connect using :connection, :url, ENV vars, then fallback to localhost
-    # @option options [:redis, :memory] :store the type of store to use (currently accepts: :redis, :memory) [Default = :memory]
-    # @option options [Hash] :store_options the type of store to use
-    # @option store_options [Redis] :connection the connection to use for the store
-    # @option store_options [String] :url the Redis connection url
-    # @option store_options [String] :size the connection pool size [Default = 3]
-    # @option store_options [String] :timeout the connection pool timeout [Default = 5]
-    def initialize(options, &block)
-      @name = options[:name]
-      @strict = !!options[:strict]
-
-      # Configure persistance
-      store_options = options[:store_options] || {}
-      @store = Queue.store(options[:store]).new( name, store_options )
-
-      # Configure pool
-      pool_options = options.dup.tap{ |x| x[:name] = pool_name }
-      @pool = create_pool(pool_options)
-
-      # Configure using DSL
-      if block_given?
-        if block.arity.abs == 1
-          yield self
+    module ClassMethods
+      # Delegate class methods down to the Instance
+      def method_missing(meth, *args, &block)
+        if instance.respond_to? meth
+          instance.send(meth, *args, &block)
         else
-          instance_eval &block
+          super
         end
       end
-      @default_priority_level = options[:default_priority_level]
 
-      register
-    end
-
-    def self.[](name)
-      Celluloid::Actor[name]
-    end
-
-    #################
-    # Configuration #
-    #################
-    # Return a persistance strategy for this option
-    # @param store_name [String] the name of the storage option
-    # @return [WindUp::Store] the storage strategy
-    def self.store(store_name = nil)
-      case store_name
-      when :redis, 'redis'
-        Store::Redis
-      else
-        Store::InMemory
+      # Intentionally skip Celluloid Pooling, going direct to instance
+      def pool(*args)
+        instance.pool(*args)
       end
+    end
+
+    ##################
+    # Initialization #
+    ##################
+    # Initialize a new Queue
+    def initialize
+      register
+      after(0) { feed_pool }
     end
 
     # Create or register the SuckerPunch pool of workers
+    # Thread-safety comes from Singleton; only one instance should exist
     # @return [Celluloid::Pool] the pool of workers
-    def create_pool(options)
-      pool_name = options[:name]
-
-      # Register existing pool under our pool_name
-      if options[:pool].respond_to? :perform
-        Celluloid::Actor[pool_name] = options[:pool]
-        options[:pool]
-
-      # Create a new pool
-      else
-        SuckerPunch.config do
-          queue options
-        end
-        SuckerPunch::Queue[pool_name]
+    def create_pool(overwrite = false)
+      if find_pool.nil? || overwrite
+        raise MissingWorkerName unless worker_class
+        terminate_pool
+        Celluloid::Actor[pool_name] = worker_class.pool( size: workers )
       end
+      find_pool
     end
 
-    # Create a new priority level for this queue
-    def priority_level(priority_level_name, options = {})
-      [options[:weight].to_i, 1].max.times { weighted_priority_levels << priority_level_name }
-      priority_levels << priority_level_name
+    def terminate_pool
+      find_pool.terminate if find_pool && find_pool.respond_to?(:terminate)
     end
 
     # Register this queue with the WindUp API
@@ -104,16 +53,125 @@ module WindUp
       WindUp::API::Queues.register name
     end
 
+    #################
+    # Configuration #
+    #################
+    # Set a persistance strategy for this option
+    # @note Redis store will attempt to connect using :connection, :url, ENV vars, then fallback to localhost
+    # @param store_name [:redis, :memory] :store the type of store to use
+    # @param options [Hash] options for this store
+    # @option options [Object] :connection the connection to use for the store
+    # @option options [String] :url the Redis connection url
+    # @option options [String] :size the connection pool size [Default = 3]
+    # @option options [String] :timeout the connection pool timeout [Default = 5]
+    # @return [WindUp::Store] the storage strategy
+    def store(store_name = :memory, options = {})
+      s = case store_name
+          when :redis, 'redis'
+            Store::Redis
+          else
+            Store::InMemory
+          end
+      @store ||= s.new( name, options )
+    end
+
+    # Create a new priority level for this queue
+    # @param priority_level_name [String] the name of the priority level
+    # @param options [Hash] any options for configuring this level
+    # @option options [Integer] :weight when given, this level will be drawn N
+    #     times as frequently as non-weighted levels
+    # @option options [Boolean] :default set this level to be the default
+    #     level for adding jobs
+    def priority_level(priority_level_name, options = {})
+      [options[:weight].to_i, 1].max.times { weighted_priority_levels << priority_level_name }
+      priority_levels << priority_level_name
+      @default_priority_level = priority_level_name if options[:default]
+    end
+
+    # Return the priority levels for this Queue
+    # @return [Array] an array of priority levels, in order of definition
+    def priority_levels
+      @priority_levels ||= []
+    end
+
+    def weighted_priority_levels
+      @weighted_priority_levels ||= []
+    end
+
+    # The default priority level to push into
+    def default_priority_level
+      @default_priority_level ||= priority_levels.first
+    end
+
+    # Define the number of workers to use for this queue
+    # @param num [Integer] the number of workers to use
+    def workers(num = nil)
+      if num.nil?
+        @workers = 1 if find_pool.respond_to?(:async) # Pool is a single Celluloid cell
+        @workers = find_pool.size if find_pool.respond_to?(:size) # Pool has multiple cells
+        @workers ||= ::Celluloid.cores # Pool doesn't exist
+      else
+        @workers = num
+        create_pool(true)
+      end
+    end
+
+    # Define what class to use as a worker for this queue
+    # @param klass [Class] the class to use as a worker
+    def worker_class(klass = nil)
+      if klass.nil?
+        @worker_class
+      else
+        recreate = @worker.nil?
+        @worker_class = klass
+        create_pool(true) unless recreate
+      end
+    end
+
+    # Force this Queue to look for/create a pool under a specific name
+    # @param pool_name [String] the pool name, as discoverable through Celluloid's registry
+    def pool_name(pname = nil)
+      if pname.nil?
+        @pool_name ||= "#{self.class.name}:pool"
+      else
+        terminate_pool if @pool_name
+        @pool_name = pname
+        create_pool
+      end
+    end
+
+    # Set this queue as strictly ordered
+    # Strictly ordered queues draw down priority levels in order of
+    # definition; first defined level is always drawn down before second,
+    # etc.
+    # @param set [Boolean] set this queue as strict
+    def strict(set = nil)
+      if set.nil?
+        @set ||= false
+      else
+        @strict = set
+      end
+    end
+
+    # Reset all configuration options
+    def reset!
+      # [:@strict, :@pool_name, :@worker_class, :@workers,
+      # :@default_priority_level, :@weighted_priority_levels, :@priority_levels
+      # :@store].each do |var|
+      #   instance_variable_set(var, nil)
+      # end
+    end
+
+    # Reconfigure this queue using our DSL
+    # @param block [Proc] the configuration block using WindUp's DSL
+    def reconfigure(&block)
+      reset!
+      instance_eval(&block)
+    end
+
     ###########
     # Queuing #
     ###########
-    # Access this queue's storage strategy
-    # Typically you shouldn't need to do this
-    # @return [WindUp::Store] the storage strategy employed
-    def store
-      @store
-    end
-
     # Push a message onto the queue
     # @param args [Object] the object to pass to the workers
     # @param opts [Hash] the options to push with
@@ -121,6 +179,7 @@ module WindUp
     def push(args, opts = {})
       opts = {priority_level: default_priority_level}.merge(opts)
       store.push args, opts
+      return args
     end
     alias_method :<<, :push
 
@@ -134,31 +193,36 @@ module WindUp
 
     # Return the worker pool for this Queue
     def pool
-      @pool ||= Celluloid::Actor[pool_name]
+      @pool ||= (find_pool || create_pool)
     end
 
     # Continually fetches new work for the pool whenever a worker is available
     # We use a self-referential schedule to avoid blocking the worker, which
     # allows us to do things like push new jobs and such.
+    # If worker isn't fully configured yet, we poll every 5 seconds until it is
     def feed_pool
       begin
         if feed_ready?
-          if available_workers?
+          if available?
             work = fetch
             if work
-              WindUp.logger.debug "Sending work to pool: #{work}"
+              WindUp.logger.debug "Proessing new job: #{work}"
               pool.async.perform(work)
             end
           end
           after(0) { feed_pool }
+        else
+          pause_feed
+          after(5) { unpause_feed }
         end
-      rescue Task::TerminatedError
+      rescue Celluloid::Task::TerminatedError
         # Clean shutdown
       rescue => e
         WindUp.logger.error "Error fetching work: #{e}"
         after(0) { feed_pool }
       end
     end
+    alias_method :start, :feed_pool
 
     ################
     # Flow Control #
@@ -183,17 +247,25 @@ module WindUp
     # Combined check to see if our #feed_pool method is ready
     def feed_ready?
       !feed_paused? && pool && store
+    rescue
+      false
     end
-
 
     ###########
     # Helpers #
     ###########
-    # Delegated SuckerPunch methods
-    def workers
-      pool.size
+    def terminate
+      terminate_pool
+      super
     end
 
+    # Shortcut checker for strictness
+    def strict?
+      @strict
+    end
+
+    # Pool methods #
+    # ------------ #
     def busy_workers
       pool.busy_size
     end
@@ -206,27 +278,17 @@ module WindUp
       idle_workers.size == 0
     end
 
-    def available_workers?
+    def available?
       !backlog?
     end
+
+    # Store methods #
+    # ------------- #
 
     # Number of jobs in the queues
     # @return [Hash] a hash of queue names and sizes
     def size
       store.size
-    end
-
-    # Check strict priority_level ordering, i.e., queues are emptied in the order
-    # they were defined.
-    # @return [Boolean] true if strict ordering of priority levels
-    def strict?
-      @strict
-    end
-
-    # Return the priority levels for this Queue
-    # @return [Array] an array of priority levels, in order of definition
-    def priority_levels
-      @priority_levels ||= []
     end
 
     # List priority levels, with weights
@@ -237,11 +299,8 @@ module WindUp
       weights
     end
 
-    # The default priority level to push into
-    def default_priority_level
-      @default_priority_level ||= priority_levels.first
-    end
-
+    # Misc. #
+    # ----- #
     def ==(other)
       (self.class.name == other.class.name) &&
       (name == other.name) &&
@@ -249,10 +308,6 @@ module WindUp
     end
 
     private
-    def weighted_priority_levels
-      @weighted_priority_levels ||= []
-    end
-
     # Returns the priority levels in sorted order
     # @return [Array] priority levels, as according to our definitions
     def queues_for_fetch
@@ -265,8 +320,12 @@ module WindUp
       end
     end
 
-    def pool_name
-      "#{name}:pool"
+    # Find our pool from the Celluloid registry
+    # This is a back-end method; publicly, you should use #pool to find or
+    # create the pool
+    def find_pool
+      p = Celluloid::Actor[pool_name]
+      p if p.respond_to?(:perform) && p.respond_to?(:async)
     end
   end
 end

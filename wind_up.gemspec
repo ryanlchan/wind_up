@@ -8,8 +8,8 @@ Gem::Specification.new do |gem|
   gem.version       = WindUp::VERSION
   gem.authors       = ["Ryan Chan"]
   gem.email         = ["ryan@ryanlchan.com"]
-  gem.description   = %q{Simple multiplexing queueing library for sucker_punch}
-  gem.summary       = %q{wind_up makes Sidekiq level queuing available to sucker_punch}
+  gem.summary       = %q{Background Processing by Celluloid + QoS = WindUp}
+  gem.description   = %q{WindUp is a simple background processing library that supports job prioritizing and reordering}
   gem.homepage      = "https://github.com/ryanlchan/wind_up"
 
   gem.files         = `git ls-files`.split($/)
@@ -23,6 +23,5 @@ Gem::Specification.new do |gem|
   gem.add_development_dependency "connection_pool"
 
   gem.add_dependency "celluloid", "~> 0.14.1"
-  gem.add_dependency "sucker_punch", "~> 0.5.1"
   gem.add_dependency "multi_json", "~> 1.7.7"
 end

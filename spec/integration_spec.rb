@@ -1,6 +1,6 @@
 require 'spec_helper'
 
-class FakeWorker
+class IntegrationWorker
   include Celluloid
 
   def self.messages
@@ -16,12 +16,17 @@ class FakeWorker
   end;
 end
 
+class IntegrationQueue
+  include WindUp::Queue
+  worker_class IntegrationWorker
+end
+
 describe 'Integration Test', integration: true do
   let(:payload) { {work: "Message", user: 1} }
   it 'pushes and processes work' do
-    WindUp.config { queue name: :integration, worker: FakeWorker, workers: 2 }
-    FakeWorker.any_instance.should_receive(:perform).with(payload)
-    WindUp::Queue[:integration].push payload
-    sleep 0.1 # Necessary to give our background task the time to process the queue
+    IntegrationWorker.any_instance.should_receive(:perform).with(payload)
+    IntegrationQueue.push payload
+    IntegrationQueue.unpause_feed # Force us to run payload now
+    sleep 0.1
   end
 end
