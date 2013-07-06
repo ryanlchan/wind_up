@@ -7,6 +7,7 @@ require 'wind_up/store/redis'
 require 'wind_up/singleton'
 require 'wind_up/queue'
 require 'wind_up/version'
+require 'wind_up/workers/handler_worker'
 
 module WindUp
   def self.logger
