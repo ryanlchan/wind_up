@@ -26,7 +26,7 @@ describe 'Integration Test', integration: true do
   it 'pushes and processes work' do
     IntegrationWorker.any_instance.should_receive(:perform).with(payload)
     IntegrationQueue.push payload
-    IntegrationQueue.unpause_feed # Force us to run payload now
+    IntegrationQueue.unpause # Force us to run payload now
     sleep 0.1
   end
 end

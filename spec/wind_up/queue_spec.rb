@@ -11,11 +11,9 @@ end
 class QueueFactory
   ALPHABET = ('a'..'z').to_a
   def self.bake(&block)
-    c = Class.new
     name = 10.times.map{ ALPHABET.sample }.join.capitalize
-    Object.const_set(name, c)
+    c = WindUp::Queue.new name
 
-    c.send(:include, WindUp::Queue)
     if block_given?
       c.instance_eval &block
     else
@@ -83,7 +81,7 @@ describe WindUp::Queue do
         end
       end
 
-      it "sets up the SuckerPunch queue" do
+      it "sets up the pool" do
         queue.pool.should be
         queue.pool.size.should eq 3
       end
@@ -143,6 +141,17 @@ describe WindUp::Queue do
         queue.priority_levels.should_not be_empty
         queue.should be_strict
       end
+    end
+
+    it 'does not create priority levels with the same name' do
+      queue = QueueFactory.bake do
+        worker_class FakeWorker
+        strict true
+        priority_level :clone1
+        priority_level :clone1
+      end
+
+      queue.priority_levels.should eq Set[:clone1]
     end
   end # with priority leels
 
@@ -273,7 +282,7 @@ describe WindUp::Queue do
           priority_level :high
           priority_level :low
         end
-        queue.priority_levels.should eq [:high, :low]
+        queue.priority_levels.should eq Set[:high, :low]
       end
 
       it 'does not return duplicates' do
@@ -282,7 +291,7 @@ describe WindUp::Queue do
           priority_level :high, weight: 10
           priority_level :low, weight: 1
         end
-        queue.priority_levels.should eq [:high, :low]
+        queue.priority_levels.should eq Set[:high, :low]
       end
     end
     context 'with a queue without priority levels' do
@@ -290,7 +299,7 @@ describe WindUp::Queue do
         queue = QueueFactory.bake do
           worker_class FakeWorker
         end
-        queue.priority_levels.should eq []
+        queue.priority_levels.should eq Set[]
       end
     end
   end

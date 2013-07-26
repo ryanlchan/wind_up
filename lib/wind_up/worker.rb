@@ -1,4 +1,4 @@
-# Entirely copied from Mike Perham's Sidekiq. Shameless, and very thankful.
+# Entirely copied from Mike Perham's Sidekiq. Shameless!
 module WindUp
   #
   # Celluloid has the nasty side effect of making objects

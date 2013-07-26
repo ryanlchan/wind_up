@@ -1,11 +1,31 @@
-# Singleton queuing interface
+# A Singleton queuing interface
 module WindUp
   module Queue
+    # Initialize Queue methods on inclusion in a class
     def self.included(base)
       base.send(:include, Worker)
       base.send(:include, Singleton)
       base.extend(ClassMethods)
     end
+
+    # Dynamically create Queue classes using a block.
+    # Usage:
+    #   WindUp::Queue.new "NewQueue" { workers(5); store(:redis) }
+    def self.new(name, &block)
+      c = Class.new
+
+      Object.const_set(name, c)
+
+      c.send(:include, WindUp::Queue)
+
+      if block_given?
+        c.instance_eval &block
+      else
+        c.instance_eval { worker_class WindUp::Workers::HandlerWorker }
+      end
+      return c
+    end
+
 
     module ClassMethods
       # Delegate class methods down to the Instance
@@ -32,7 +52,7 @@ module WindUp
       after(0) { feed_pool }
     end
 
-    # Create or register the SuckerPunch pool of workers
+    # Create or register the pool of workers
     # Thread-safety comes from Singleton; only one instance should exist
     # @return [Celluloid::Pool] the pool of workers
     def create_pool(overwrite = false)
@@ -83,6 +103,7 @@ module WindUp
     # @option options [Boolean] :default set this level to be the default
     #     level for adding jobs
     def priority_level(priority_level_name, options = {})
+      weighted_priority_levels.delete(priority_level_name)
       [options[:weight].to_i, 1].max.times { weighted_priority_levels << priority_level_name }
       priority_levels << priority_level_name
       @default_priority_level = priority_level_name if options[:default]
@@ -91,7 +112,7 @@ module WindUp
     # Return the priority levels for this Queue
     # @return [Array] an array of priority levels, in order of definition
     def priority_levels
-      @priority_levels ||= []
+      @priority_levels ||= Set.new
     end
 
     def weighted_priority_levels
@@ -153,22 +174,6 @@ module WindUp
       end
     end
 
-    # Reset all configuration options
-    def reset!
-      # [:@strict, :@pool_name, :@worker_class, :@workers,
-      # :@default_priority_level, :@weighted_priority_levels, :@priority_levels
-      # :@store].each do |var|
-      #   instance_variable_set(var, nil)
-      # end
-    end
-
-    # Reconfigure this queue using our DSL
-    # @param block [Proc] the configuration block using WindUp's DSL
-    def reconfigure(&block)
-      reset!
-      instance_eval(&block)
-    end
-
     ###########
     # Queuing #
     ###########
@@ -202,18 +207,22 @@ module WindUp
     # If worker isn't fully configured yet, we poll every 5 seconds until it is
     def feed_pool
       begin
-        if feed_ready?
-          if available?
-            work = fetch
-            if work
-              WindUp.logger.debug "Proessing new job: #{work}"
-              pool.async.perform(work)
-            end
+        # Ensure that we're properly configured
+        if !ready?
+          pause
+          after(5) { unpause }
+
+        # Ensure that this queue is running and that there is work to be done
+        elsif paused? || !available?
+
+        # Parse out the work
+        else
+          work = fetch
+          if work
+            WindUp.logger.debug "(IW: #{idle_workers} BW: #{busy_workers}) Proessing new job: #{work}"
+            pool.async.perform(work)
           end
           after(0) { feed_pool }
-        else
-          pause_feed
-          after(5) { unpause_feed }
         end
       rescue Celluloid::Task::TerminatedError
         # Clean shutdown
@@ -228,25 +237,25 @@ module WindUp
     # Flow Control #
     ################
     # Pause the #feed_pool loop
-    def pause_feed
+    def pause
       @paused = true
     end
 
     # Unpause the #feed_pool loop
-    def unpause_feed
+    def unpause
       @paused = false
       async.feed_pool
     end
 
     # Check if the #feed_pool loop is paused or not
-    def feed_paused?
+    def paused?
       @paused = false if @paused.nil?
       @paused
     end
 
     # Combined check to see if our #feed_pool method is ready
-    def feed_ready?
-      !feed_paused? && pool && store
+    def ready?
+      !!(pool && store)
     rescue
       false
     end
@@ -275,7 +284,7 @@ module WindUp
     end
 
     def backlog?
-      idle_workers.size == 0
+      idle_workers == 0
     end
 
     def available?
@@ -314,7 +323,7 @@ module WindUp
       if priority_levels.empty?
         nil
       elsif strict?
-        priority_levels.dup
+        priority_levels.to_a
       else
         weighted_priority_levels.shuffle.uniq
       end
@@ -325,7 +334,7 @@ module WindUp
     # create the pool
     def find_pool
       p = Celluloid::Actor[pool_name]
-      p if p.respond_to?(:perform) && p.respond_to?(:async)
+      p if p.respond_to?(:perform) && p.respond_to?(:async) && p.alive?
     end
   end
 end

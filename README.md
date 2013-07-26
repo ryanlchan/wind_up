@@ -16,57 +16,85 @@ Or install separately:
 
     $ gem install wind_up
 
+## Configuration ##
+
+WindUp queues are defined declaratively using a DSL. The preferred way to
+create a queue is to define a class and include the WindUp::Queue module,
+using class macros to configure the Queue:
+
+```Ruby
+# app/queues/new_queue.rb
+
+class NewQueue
+  include WindUp::Queue
+
+  name :proportional    # name
+  worker ReactorWorker
+  workers 5
+end
+```
+
+However, sometimes you don't know what kind of queues you need before hand. In
+those cases, you can use WindUp::Queue.new to dynamically instantiate a queue
+using the same class macro DSL:
+
+```Ruby
+require 'wind_up'
+
+NewQueue = WindUp::Queue.new do
+  name :proportional
+  worker ReactorWorker
+  workers 5
+end
+```
+
+### Priority Levels ###
+
+WindUp supports defining priority levels for incoming messages. Prioritization
+can occur in two modes:
+
+  * Proportional, in which each level is assigned a weight and is accesses at
+    a proportionate frequency; aka [Weighted Fair Queueing](http://en.wikipedia.org/wiki/Weighted_fair_queuing) (Default)
+  * Strict, in which each level is accessed in order of definition until empty
+
+Priority levels are also defined using WindUp's DSL class macros:
+
+```Ruby
+class PrioritizedQueue
+  include WindUp::Queue
+
+  # Equal levels, proportional access
+  priority_level :a
+  priority_level :b
+
+  # Unequal levels; :twice is accessed 2x as frequently as :once
+  priority_level :twice, weight: 2
+  priority_level :once,  weight: 1
+
+  # Strictly ordered; messages are drawn from :first until empty, then from
+    :second, etc
+  strict true
+  priority_level :first
+  priority_level :second
+end
+```
+
 ## Usage ##
-Define your Wind Up queues using the WindUp DSL:
+
+Queues are created as singletons and are accessed using class methods.
+Processing is automatically started, and is completed asynchronously.
+
+Add jobs to your pools' queues using the `.push` method.
 ```Ruby
-# config/initializers/wind_up.rb
-
-WindUp.config do
-  # 1 pool of 10 workers with 2 queues feeding in
-  # :high priority queue is checked 10x as frequently as :low priority queue
-  queue name: :proportional, worker: ReactorWorker, workers: 5 do
-    priority_level :high, weight: 10
-    priority_level :low, weight: 1
-  end
-
-  # 1 queue of 5 workers with 2 queues feeding in
-  # Queues are emptied in order of definition, i.e., :first is polled until
-  # empty, then :second, etc
-  queue name: :strict, worker: ReactorWorker, workers: 5, strict: true do
-    priority_level :first
-    priority_level :second
-  end
-
-  # Use an existing SuckerPunch pool
-  queue name: :existing, pool: SuckerPunch::Queue[:my_pool]
-end
-```
-Wind Up will automatically create the relevant SuckerPunch queue upon initialization.
-
-Speaking of, define your SuckerPunch workers as usual - no special configuration necessary:
-```Ruby
-# app/workers/log_worker.rb
-
-class LogWorker
-  include SuckerPunch::Worker
-
-  def perform(event)
-    Log.new(event).track
-  end
-end
+NewQueue.push("This is passed to #perform")
 ```
 
-Add jobs to your pools' queues using `#push`:
+Pause and resume processing of the Queue using the `.pause` and `.resume`.
 ```Ruby
-# Push to the first queue available
-WindUp::Queue[:proportional].push("This is passed to #perform")
-
-# Push to a specific queue
-WindUp::Queue[:proportional].push("This is passed to #perform", priority: :high)
-WindUp::Queue[:strict].push({note: "Accepts any object here"}, priority: :first)
+NewQueue.pause    # pauses processing of queue jobs
+NewQueue.unpause  # resume processing
+NewQueue.paused?  # check if the queue is processing
 ```
-
-Processing is automatically started upon `#push`, and is completed asynchronously.
 
 ## Persistence ##
 If you'd like to persist your jobs, there is the option to use a Redis database to store jobs.
@@ -76,37 +104,20 @@ require 'connection_pool'
 require 'redis'
 require 'multi_json'
 
-WindUp.config do
+class NewQueue
+  # By default we look through ENV vars and localhost for a Redis server
+  store :redis
+
   # Supply a connection/connection_pool
-  queue name: :redis, store: :redis, store_options: { connection: $REDIS }
+  store :redis, { connection: $REDIS }
 
   # or just configuration options, and we'll make the connection_pool for you
-  queue name: :redis, store: :redis, store_options: { url: "redis://localhost:6379", size: 3 }
-
-  # or leave out config entirely and we'll look through ENV vars and localhost for a Redis server
-  queue name :redis,  store: :redis
-
+  store :redis, { url: "redis://localhost:6379", size: 3 }
+end
 ```
 
 Jobs are persisted as JSON encoded objects in lists. The convention for naming
 the list keys is: "wind_up:<RAILS_ENV>:queues:<QUEUE_NAME>:<PRIORITY_LEVEL>".
-
-## WindUp pass-through ##
-Your WindUp pool methods still work:
-```Ruby
-WindUp::Queue[:log_queue].workers # => 10
-WindUp::Queue[:log_queue].busy_workers # => 7
-WindUp::Queue[:log_queue].idle_workers # => 3
-WindUp::Queue[:log_queue].size # => { high: 5, low: 3 } # # of jobs enqueued
-```
-
-## Internals ##
-Wind Up's queue is based on a pooled reactor pattern, consisting of two parts to this system:
-  1) WindUp::Feeder, which holds all pending work for your pool of reactors
-     and is responsible for queueing and ordering
-  2) WindUp::Worker ("Reactors"), which performs the work passed in by WindUp::Feeder
-
-As special class is included which
 
 ## Contributing
 
