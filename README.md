@@ -72,7 +72,7 @@ class PrioritizedQueue
   priority_level :once,  weight: 1
 
   # Strictly ordered; messages are drawn from :first until empty, then from
-    :second, etc
+  # :second, etc
   strict true
   priority_level :first
   priority_level :second
