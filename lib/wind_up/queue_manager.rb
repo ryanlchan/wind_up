@@ -14,7 +14,7 @@ module WindUp
       @worker_class = worker_class
       @args = options[:args] ? Array(options[:args]) : []
 
-      @master_mailbox = Celluloid::Mailbox.new
+      @master_mailbox = PublisherMailbox.new
       @sync_proxy     = Celluloid::SyncProxy.new(@master_mailbox, @worker_class)
       @async_proxy    = Celluloid::AsyncProxy.new(@master_mailbox, @worker_class)
       @future_proxy   = Celluloid::FutureProxy.new(@master_mailbox, @worker_class)

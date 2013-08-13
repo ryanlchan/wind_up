@@ -38,22 +38,3 @@ module WindUp
     end
   end
 end
-
-
-# Patch Celluloid's mailbox with our new publisher methods
-if RUBY_VERSION < "2.0.0"
-  # Ahh, Ruby 2.0, nice
-  Celluloid::Mailbox.send :prepend, WindUp::NewWorkPublisher
-else
-  # Woe is us! Time for some fancy metaprogramming
-  Celluloid::Mailbox.class_eval do
-    include WindUp::NewWorkPublisher
-    add_without_publish = instance_method(:<<)
-
-    define_method(:<<) do |message, &block|
-      add_without_publish.bind(self).(message, &block)
-      publish
-    end
-  end
-end
-

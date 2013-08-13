@@ -2,7 +2,7 @@ require 'spec_helper'
 
 describe WindUp::NewWorkPublisher do
   let(:mailbox) { Celluloid::Mailbox.new }
-  let(:origin) { Celluloid::Mailbox.new }
+  let(:origin) { WindUp::PublisherMailbox.new }
 
   describe '#add_subscriber' do
     it 'adds a subscriber to the list of subscribers' do
