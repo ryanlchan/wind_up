@@ -3,7 +3,7 @@
 module WindUp
   class QueueManager
     include Celluloid
-    attr_reader :size, :master_mailbox, :worker_class
+    attr_reader :size
 
     trap_exit :restart_actor
     proxy_class WindUp::QueueProxy
