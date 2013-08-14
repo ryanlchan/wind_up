@@ -24,15 +24,15 @@ end
 
 
 describe WindUp::QueueManager do
-  let(:queue) { WindUp::QueueManager.new FakeWorker, size: 2 }
+  let(:queue) { FakeWorker.queue size: 2 }
   describe '#initialize' do
     it 'creates a supervision group of workers' do
-      expect { WindUp::QueueManager.new FakeWorker, size: 1 }.to change { Celluloid::Actor.all.size }.by(2)
+      expect { FakeWorker.queue size: 1 }.to change { Celluloid::Actor.all.size }.by(2)
     end
 
     it 'creates as many workers as number of cores on the system' do
-      cores = WindUp::QueueManager.new FakeWorker
-      cores.size.should eq Celluloid.cores
+      cores = FakeWorker.queue
+      cores.__manager__.size.should eq Celluloid.cores
     end
 
     it 'requires a worker class' do
@@ -68,7 +68,7 @@ describe WindUp::QueueManager do
     end
 
     it 'processes additional work when workers as sleeping' do
-      sleepy_queue = WindUp::QueueManager.new SleepyWorker, size: 1
+      sleepy_queue = SleepyWorker.queue size: 1
       start_time = Time.now
       vals = 2.times.map { sleepy_queue.future.sleepy }
       vals.each { |v| v.value }
@@ -91,14 +91,15 @@ describe WindUp::QueueManager do
   end
 
   describe '#size=' do
+    let(:manager) { queue.__manager__ }
     it 'increases the size of the pool' do
-      queue.size.should eq 2
-      expect { queue.size = 3 }.to change{ Celluloid::Actor.all.size }.by(1)
+      manager.size.should eq 2
+      expect { manager.size = 3 }.to change{ Celluloid::Actor.all.size }.by(1)
     end
 
     it 'reduces the size of the pool' do
-      queue.size.should eq 2
-      expect { queue.size = 1 }.to change{ Celluloid::Actor.all.size }.by(-1)
+      manager.size.should eq 2
+      expect { manager.size = 1 }.to change{ Celluloid::Actor.all.size }.by(-1)
     end
   end
 end

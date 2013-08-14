@@ -1,16 +1,29 @@
-# A proxy object which forwards async/future calls synchronously
-#
-# We want QueueManager to handle all logic for forwarding calls, including
-# #async and #future, but ActorProxy globs those as Celluloid methods.
-# QueueProxy simply forwards them to the QueueManager to deal with.
+# A proxy object which sends calls to a Queue mailbox
 module WindUp
   class QueueProxy < Celluloid::ActorProxy
-    def async(method_name = nil, *args, &block)
-      method_missing :async, method_name, *args, &block
+     def initialize(manager)
+      @mailbox       = manager.master_mailbox
+      @klass         = manager.worker_class.to_s
+      @sync_proxy    = ::Celluloid::SyncProxy.new(@mailbox, @klass)
+      @async_proxy   = ::Celluloid::AsyncProxy.new(@mailbox, @klass)
+      @future_proxy  = ::Celluloid::FutureProxy.new(@mailbox, @klass)
+
+      @manager_proxy = manager
     end
 
-    def future(method_name = nil, *args, &block)
-      method_missing :future, method_name, *args, &block
+    # Escape route to access the QueueManager actor from the QueueProxy
+    def __manager__
+      @manager_proxy
+    end
+
+    # Reroute terminate to the queue manager
+    def terminate
+      __manager__.terminate
+    end
+
+    def inspect
+      orig = super
+      orig.sub("Celluloid::ActorProxy", "WindUp::QueueProxy")
     end
   end
 end

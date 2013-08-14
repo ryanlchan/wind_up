@@ -6,6 +6,7 @@ require 'wind_up/publisher_mailbox'
 require 'wind_up/queue_proxy'
 require 'wind_up/queue_manager'
 require 'wind_up/version'
+require 'wind_up/celluloid_ext'
 
 module WindUp
   def self.logger
