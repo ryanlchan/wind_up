@@ -12,9 +12,9 @@ describe WindUp::NewWorkPublisher do
   end
 
   describe '#<<' do
-    it 'publishes the NewWorkSignal event to all subscribers' do
+    it 'publishes the Forwarder event to all subscribers' do
       origin.add_subscriber(mailbox)
-      mailbox.should_receive(:<<).with(kind_of(WindUp::NewWorkSignal))
+      mailbox.should_receive(:<<).with(kind_of(WindUp::Forwarder))
       origin << "New work"
     end
   end

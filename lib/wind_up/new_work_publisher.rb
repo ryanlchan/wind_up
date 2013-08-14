@@ -26,7 +26,7 @@ module WindUp
     # Sends out a NewWorkSignal to all subscribers
     def publish
       subscribers.each do |sub|
-        nws = WindUp::NewWorkSignal.new self
+        nws = WindUp::Forwarder.new self
         begin
           sub << nws
         rescue Celluloid::MailboxError

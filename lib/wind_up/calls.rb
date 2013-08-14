@@ -1,8 +1,8 @@
-# WindUp's NewWorkSignal allows a mailbox to signal to another mailbox the
-# presence of new work. We slightly abuse the SyncCall class to inject the
-# remote work request. Sorry.
+# WindUp's Forwarder call allows a mailbox to forward its messages to
+# another. We slightly abuse the SyncCall class to inject the remote work
+# request. Sorry.
 module WindUp
-  class NewWorkSignal < Celluloid::Call
+  class Forwarder < Celluloid::Call
 
     # Do not block if no work found
     TIMEOUT = 0
