@@ -8,8 +8,8 @@ Gem::Specification.new do |gem|
   gem.version       = WindUp::VERSION
   gem.authors       = ["Ryan Chan"]
   gem.email         = ["ryan@ryanlchan.com"]
-  gem.summary       = %q{Background Processing by Celluloid + QoS = WindUp}
-  gem.description   = %q{WindUp is a simple background processing library that supports job prioritizing and reordering}
+  gem.summary       = %q{A drop-in replacement for Celluloid pools using the message API}
+  gem.description   = %q{WindUp is a simple background processing library meant to improve on Celluloid's pools}
   gem.homepage      = "https://github.com/ryanlchan/wind_up"
 
   gem.files         = `git ls-files`.split($/)
