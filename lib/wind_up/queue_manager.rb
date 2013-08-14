@@ -1,5 +1,31 @@
 # Manages a queue of workers
 # Accumulates/stores messages and supervises a group of workers
+# WindUp `Queues` are almost drop-in replacements for Celluloid pools.
+#
+# ```ruby
+# q = AnyCelluloidClass.queue size: 3 # size defaults to number of cores
+# q.any_method                # perform synchronously
+# q.async.long_running_method # perform asynchronously
+# q.future.i_want_this_back   # perform as a future
+# ```
+#
+# `Queues` use two separate proxies to control `Queue` commands vs
+# `QueueManager` commands.
+# ```ruby
+# # .queue returns the proxy for the queue (i.e. workers)
+# q = AnyCelluloidClass.queue # => WindUp::QueueProxy(AnyCelluloidClass)
+#
+# # Get the proxy for the manager from the QueueProxy
+# q.__manager__ # => Celluloid::ActorProxy(WindUp::QueueManager)
+#
+# # Return to the queue from the manager
+# q.__manager__.queue # WindUp::QueueProxy(AnyCelluloidClass)
+# ```
+#
+# You may store these `Queue` object in the registry as any actor
+# ```ruby
+# Celluloid::Actor[:queue] = q
+# ```
 module WindUp
   class QueueManager
     include Celluloid

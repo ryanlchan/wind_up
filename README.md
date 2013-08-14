@@ -1,123 +1,77 @@
 Wind Up
 =======
-Wind Up brings the power of Sidekiq's flexible and multiqueues to wind_up's simplicity.
+WindUp is a drop-in replacement for Celluloid's `PoolManager` class. So why
+would you use WindUp?
 
-## Installation ##
+* Asynchronous message passing - worker-level concurrency on any blocking call
+  (i.e. #sleep, Celluloid::IO, etc)
+* Separate proxies for QueueManager and queues - no more unexpected behavior
+  between #is_a? and #class
+* Single queue handles multiple workers - Using WindUp's built in Delegator
+  class, you can have one pool execute multiple types of workers
+  simultaneously
 
-Add wind_up to your Gemfile:
+Usage
+-----
 
-    gem 'wind_up'
+WindUp `Queues` are almost drop-in replacements for Celluloid pools.
 
-Install your bundle:
+```ruby
+q = AnyCelluloidClass.queue size: 3 # size defaults to number of cores
+q.any_method                # perform synchronously
+q.async.long_running_method # perform asynchronously
+q.future.i_want_this_back   # perform as a future
+```
 
-    $ bundle
+`Queues` use two separate proxies to control `Queue` commands vs
+`QueueManager` commands.
+```ruby
+# .queue returns the proxy for the queue (i.e. workers)
+q = AnyCelluloidClass.queue # => WindUp::QueueProxy(AnyCelluloidClass)
 
-Or install separately:
+# Get the proxy for the manager from the QueueProxy
+q.__manager__ # => Celluloid::ActorProxy(WindUp::QueueManager)
 
-    $ gem install wind_up
+# Return to the queue from the manager
+q.__manager__.queue # WindUp::QueueProxy(AnyCelluloidClass)
+```
 
-## Configuration ##
+You may store these `Queue` object in the registry as any actor
+```ruby
+Celluloid::Actor[:queue] = q
+```
 
-WindUp queues are defined declaratively using a DSL. The preferred way to
-create a queue is to define a class and include the WindUp::Queue module,
-using class macros to configure the Queue:
+Multiple worker types per queue
+-------------------------------
 
-```Ruby
-# app/queues/new_queue.rb
+Ever wish you could reuse the same background worker pool for multiple types
+of work? WindUp's `Delegator` was designed to solve this
+problem.`Delegator#perform_with` will instantiate the class and run its
+#perform method with any additional arguments provided
 
-class NewQueue
-  include WindUp::Queue
+Use just like a WindUp Queue or Celluloid Pool; `#sync`, `#async`, and
+  `#future` all work
 
-  name :proportional    # name
-  worker ReactorWorker
-  workers 5
+Usage
+-----
+Create a new `Delegator` queue using the WindUp Queue method. Use
+`Delegator#perform_with` to perform tasks in the background.
+
+```ruby
+# Create a Delegator queue
+queue = WindUp::Delegator.queue size: 3
+
+# Create a job class
+class GreetingJob
+  def perform(name = "Bob")
+    "Hello, #{name}!"
+  end
 end
+
+# Send the delayed action to the Delegator queue
+queue.async.perform_with GreetingJob, "Mary" # => nil, work completed in background
+queue.future.perform_with GreetingJob, "Tim" # => Celluloid::Future, with value "Hello, Tim!"
 ```
-
-However, sometimes you don't know what kind of queues you need before hand. In
-those cases, you can use WindUp::Queue.new to dynamically instantiate a queue
-using the same class macro DSL:
-
-```Ruby
-require 'wind_up'
-
-NewQueue = WindUp::Queue.new do
-  name :proportional
-  worker ReactorWorker
-  workers 5
-end
-```
-
-### Priority Levels ###
-
-WindUp supports defining priority levels for incoming messages. Prioritization
-can occur in two modes:
-
-  * Proportional, in which each level is assigned a weight and is accesses at
-    a proportionate frequency; aka [Weighted Fair Queueing](http://en.wikipedia.org/wiki/Weighted_fair_queuing) (Default)
-  * Strict, in which each level is accessed in order of definition until empty
-
-Priority levels are also defined using WindUp's DSL class macros:
-
-```Ruby
-class PrioritizedQueue
-  include WindUp::Queue
-
-  # Equal levels, proportional access
-  priority_level :a
-  priority_level :b
-
-  # Unequal levels; :twice is accessed 2x as frequently as :once
-  priority_level :twice, weight: 2
-  priority_level :once,  weight: 1
-
-  # Strictly ordered; messages are drawn from :first until empty, then from
-  # :second, etc
-  strict true
-  priority_level :first
-  priority_level :second
-end
-```
-
-## Usage ##
-
-Queues are created as singletons and are accessed using class methods.
-Processing is automatically started, and is completed asynchronously.
-
-Add jobs to your pools' queues using the `.push` method.
-```Ruby
-NewQueue.push("This is passed to #perform")
-```
-
-Pause and resume processing of the Queue using the `.pause` and `.resume`.
-```Ruby
-NewQueue.pause    # pauses processing of queue jobs
-NewQueue.unpause  # resume processing
-NewQueue.paused?  # check if the queue is processing
-```
-
-## Persistence ##
-If you'd like to persist your jobs, there is the option to use a Redis database to store jobs.
-```Ruby
-# Additional requirements
-require 'connection_pool'
-require 'redis'
-require 'multi_json'
-
-class NewQueue
-  # By default we look through ENV vars and localhost for a Redis server
-  store :redis
-
-  # Supply a connection/connection_pool
-  store :redis, { connection: $REDIS }
-
-  # or just configuration options, and we'll make the connection_pool for you
-  store :redis, { url: "redis://localhost:6379", size: 3 }
-end
-```
-
-Jobs are persisted as JSON encoded objects in lists. The convention for naming
-the list keys is: "wind_up:<RAILS_ENV>:queues:<QUEUE_NAME>:<PRIORITY_LEVEL>".
 
 ## Contributing
 
