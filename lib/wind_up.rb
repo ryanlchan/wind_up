@@ -1,13 +1,13 @@
 require 'celluloid'
 require 'wind_up/exceptions'
-require 'wind_up/worker'
-require 'wind_up/api'
-require 'wind_up/store/in_memory'
-require 'wind_up/store/redis'
-require 'wind_up/singleton'
-require 'wind_up/queue'
+require 'wind_up/calls'
+require 'wind_up/new_work_publisher'
+require 'wind_up/publisher_mailbox'
+require 'wind_up/queue_proxy'
+require 'wind_up/queue_manager'
 require 'wind_up/version'
-require 'wind_up/workers/handler_worker'
+require 'wind_up/celluloid_ext'
+require 'wind_up/delegator'
 
 module WindUp
   def self.logger

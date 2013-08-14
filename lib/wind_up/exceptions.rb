@@ -1,4 +1,3 @@
 module WindUp
-  class Error < StandardError; end
-  class MissingWorkerName < Error; end
+  class MissingWorkerClass < StandardError; end
 end

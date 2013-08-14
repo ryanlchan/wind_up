@@ -1,10 +1,5 @@
 require 'spec_helper'
 
-class FakeWorker
-  include Celluloid
-  def perform(*args); end;
-end
-
 describe WindUp do
   describe '.logger' do
     it "delegates get to Celluloid's logger" do
