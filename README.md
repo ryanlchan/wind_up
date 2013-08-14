@@ -46,8 +46,8 @@ Multiple worker types per queue
 
 Ever wish you could reuse the same background worker pool for multiple types
 of work? WindUp's `Delegator` was designed to solve this
-problem.`Delegator#perform_with` will instantiate the class and run its
-#perform method with any additional arguments provided
+problem.`Delegator#perform_with` will instantiate the class and run its #perform
+method with any additional arguments provided
 
 Use just like a WindUp Queue or Celluloid Pool; `#sync`, `#async`, and
   `#future` all work
