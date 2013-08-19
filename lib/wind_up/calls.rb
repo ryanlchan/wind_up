@@ -1,19 +1,26 @@
-# WindUp's Forwarder call allows a mailbox to forward its messages to
-# another. We slightly abuse the SyncCall class to inject the remote work
-# request. Sorry.
 module WindUp
-  class Forwarder < Celluloid::Call
+  # WindUp's ForwardedCall tells an actor to pull a message from a source
+  # mailbox when processed
+  class ForwardedCall < Celluloid::Call
 
     # Do not block if no work found
     TIMEOUT = 0
 
-    def initialize(sender)
-      @sender = sender
+    def initialize(source)
+      @source = source
     end
 
-    # Pull the next message from the sender, if available
+    # Pull the next message from the source, if available
     def dispatch(obj)
-      ::Celluloid.mailbox << @sender.receive(TIMEOUT)
+      msg = @source.receive(TIMEOUT)
+      ::Celluloid.mailbox << msg if msg
+    end
+  end
+
+  # Wraps a TerminationRequest for standard ordering within a mailbox
+  class DelayedTerminationRequest < Celluloid::Call
+    def initialize
+      @method = :terminate
     end
   end
 end

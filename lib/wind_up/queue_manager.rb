@@ -29,18 +29,23 @@
 module WindUp
   class QueueManager
     include Celluloid
-    attr_reader :size, :master_mailbox, :worker_class
+    attr_reader :size, :router, :worker_class
 
     trap_exit :restart_actor
 
     # Don't use QueueManager.new, use Klass.queue instead
     def initialize(worker_class, options = {})
-      @size = options[:size] || [Celluloid.cores, 2].max
+      defaults = { :size => [Celluloid.cores, 2].max,
+                   :router => :scattergather }
+      options = defaults.merge options
 
       @worker_class = worker_class
-      @master_mailbox = PublisherMailbox.new
       @args = options[:args] ? Array(options[:args]) : []
+      @size = options[:size]
 
+      router_class = Routers[options[:router]]
+      raise ArgumentError, "Router class not recognized" unless router_class
+      @router = router_class.new
 
       @registry = Celluloid::Registry.root
       @group    = []
@@ -50,7 +55,7 @@ module WindUp
     # Terminate our supervised group on finalization
     finalizer :__shutdown__
     def __shutdown__
-      @master_mailbox.shutdown
+      @router.shutdown
       group.reverse_each(&:terminate)
     end
 
@@ -76,7 +81,7 @@ module WindUp
     # Return the size of the queue backlog
     # @return [Integer] the number of messages queueing
     def backlog
-      @master_mailbox.size
+      @router.size
     end
 
     def inspect
@@ -122,11 +127,11 @@ module WindUp
         delta.times do
           worker = Celluloid::SupervisionGroup::Member.new @registry, @worker_class, :args => @args
           group << worker
-          @master_mailbox.add_subscriber(worker.actor.mailbox)
+          @router.add_subscriber(worker.actor.mailbox)
         end
       else
         # Truncate pool
-        delta.abs.times { @master_mailbox << Celluloid::TerminationRequest.new }
+        delta.abs.times { @router << DelayedTerminationRequest.new }
       end
     end
   end

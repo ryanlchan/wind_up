@@ -2,7 +2,7 @@
 module WindUp
   class QueueProxy < Celluloid::ActorProxy
      def initialize(manager)
-      @mailbox       = manager.master_mailbox
+      @mailbox       = manager.router
       @klass         = manager.worker_class.to_s
       @sync_proxy    = ::Celluloid::SyncProxy.new(@mailbox, @klass)
       @async_proxy   = ::Celluloid::AsyncProxy.new(@mailbox, @klass)
