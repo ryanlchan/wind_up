@@ -16,9 +16,17 @@ module WindUp
       @manager_proxy
     end
 
-    # Reroute terminate to the queue manager
+    # Reroute termination/alive? to the queue manager
     def terminate
       __manager__.terminate
+    end
+
+    def terminate!
+      __manager__.terminate!
+    end
+
+    def alive?
+      __manager__.alive?
     end
 
     def inspect

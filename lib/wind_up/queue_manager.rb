@@ -36,7 +36,7 @@ module WindUp
     # Don't use QueueManager.new, use Klass.queue instead
     def initialize(worker_class, options = {})
       defaults = { :size => [Celluloid.cores, 2].max,
-                   :router => :scattergather }
+                   :router => :first_available }
       options = defaults.merge options
 
       @worker_class = worker_class

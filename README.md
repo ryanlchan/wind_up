@@ -3,13 +3,13 @@ Wind Up
 WindUp is a drop-in replacement for Celluloid's `PoolManager` class. So why
 would you use WindUp?
 
-* Asynchronous message passing - worker-level concurrency on any blocking call
-  (i.e. #sleep, Celluloid::IO, etc)
+* Asynchronous message passing - get all the nice worker-level concurrency
+  Celluloid give you (#sleep, #Celluloid::IO, #future, etc)
 * Separate proxies for QueueManager and queues - no more unexpected behavior
   between #is_a? and #class
-* Single queue handles multiple workers - Using WindUp's built in Delegator
-  class, you can have one pool execute multiple types of workers
-  simultaneously
+* Single queue handles multiple workers - Extend WindUp with
+  [MultiWindUp](https://www.github.com/ryanlchan/multi_wind_up) and you can
+  have one pool execute multiple types of workers simultaneously
 
 Usage
 -----
@@ -41,37 +41,47 @@ You may store these `Queue` object in the registry as any actor
 Celluloid::Actor[:queue] = q
 ```
 
-Multiple worker types per queue
--------------------------------
+Changing Routing Behavior (Advanced)
+------------------------------------
 
-Ever wish you could reuse the same background worker pool for multiple types
-of work? WindUp's `Delegator` was designed to solve this
-problem.`Delegator#perform_with` will instantiate the class and run its #perform
-method with any additional arguments provided
+WindUp accepts multiple types of routing behavior. Supported behaviors include:
 
-Use just like a WindUp Queue or Celluloid Pool; `#sync`, `#async`, and
-  `#future` all work
+  * :random - Route messages to workers randomly
+  * :round_robin - Route messages to each worker sequentially
+  * :smallest_mailbox - Route messages to the worker with the smallest mailbox
+  * :first_available - Route messages to the first available worker (Default)
 
-Usage
------
-Create a new `Delegator` queue using the WindUp Queue method. Use
-`Delegator#perform_with` to perform tasks in the background.
+To configure your queue to use a specific routing style, specify the routing
+behavior when calling .queue:
 
 ```ruby
-# Create a Delegator queue
-queue = WindUp::Delegator.queue size: 3
+# Use a random router
+Klass.queue router: :random
+```
 
-# Create a job class
-class GreetingJob
-  def perform(name = "Bob")
-    "Hello, #{name}!"
+You can specify your own custom routing behavior as well:
+```ruby
+class FirstRouter < WindUp::Router::Base
+  # Returns the next subscriber to route a message to
+  def next_subscriber
+    subscribers.first
   end
 end
 
-# Send the delayed action to the Delegator queue
-queue.async.perform_with GreetingJob, "Mary" # => nil, work completed in background
-queue.future.perform_with GreetingJob, "Tim" # => Celluloid::Future, with value "Hello, Tim!"
+# Register this router
+WindUp::Routers.register :first, FirstRouter
+
+# Use this router
+q = Klass.queue router: :first
+
 ```
+
+Multiple worker types per queue
+-------------------------------
+
+This part of WindUp has been extracted to its own gem,
+[MultiWindUp](https://www.github.com/ryanlchan/multi_wind_up).
+WindUp now only contains the pooling implementation.
 
 ## Contributing
 

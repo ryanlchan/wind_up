@@ -3,11 +3,7 @@ begin
 rescue LoadError
 end
 
-require 'wind_up'
-require 'connection_pool'
-require 'redis'
-
-
+require 'celluloid'
 require 'wind_up'
 
 Celluloid.shutdown; Celluloid.boot

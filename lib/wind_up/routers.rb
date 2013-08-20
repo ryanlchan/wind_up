@@ -1,7 +1,9 @@
-# A variant of Celluloid::Mailbox which forwards messages to subscribers
+# A duck-type of Celluloid::Mailbox which forwards messages to subscribers
 #
-# Router is not a mailbox in the strict sense. It acts as a demuxer for calls,
-# accepting and routing them to the next available subscriber.
+# Router is not a mailbox in the strict sense. It acts as a forwarder for
+# calls, accepting and routing them to the next available subscriber. As with
+# Akka routers, pushing a call onto a Router is invoked concurrently from the
+# sender and must be threadsafe.
 module WindUp
   module Routers
     def self.register(name, klass)
@@ -19,6 +21,10 @@ module WindUp
 
   module Router
     class Base
+      def initialize
+        @mutex = Mutex.new
+      end
+
       # List all subscribers
       def subscribers
         @subscribers ||= []
@@ -27,19 +33,28 @@ module WindUp
       # Subscribe to this mailbox for updates of new messages
       # @param subscriber [Object] the subscriber to send messages to
       def add_subscriber(subscriber)
-        subscribers << subscriber unless subscribers.include?(subscriber)
+        @mutex.synchronize do
+          subscribers << subscriber unless subscribers.include?(subscriber)
+        end
       end
 
       # Remove a subscriber from thie mailbox
       # @param subscriber [Object] the subscribed object
       def remove_subscriber(subscriber)
-        subscribers.delete subscriber
+        @mutex.synchronize do
+          subscribers.delete subscriber
+        end
       end
 
       # Send the call to all subscribers
       def <<(message)
-        target = next_subscriber
-        send_message(target, message) if target
+        @mutex.lock
+        begin
+          target = next_subscriber
+          send_message(target, message) if target
+        ensure
+          @mutex.unlock rescue nil
+        end
       end
 
       def broadcast(message)
@@ -60,13 +75,6 @@ module WindUp
           end
         end
         nil
-      end
-
-      def alive?
-        true
-      end
-
-      def shutdown
       end
     end
 
@@ -96,31 +104,19 @@ module WindUp
     # The strategy employed is similar to a ScatterGatherFirstCompleted router in
     # Akka, but wrapping messages in the ForwardedCall structure so computation is
     # only completed once.
-    class ScatterGatherFirstCompleted < Base
+    class FirstAvailable < Base
       def mailbox
         @mailbox ||= Celluloid::Mailbox.new
       end
 
       def <<(msg)
-        mailbox << msg
-        signal
-      end
-
-      def signal
-        subscribers.each do |sub|
-          sig = WindUp::ForwardedCall.new(mailbox)
-          begin
-            sub << sig
-          rescue Celluloid::MailboxError
-            # Mailbox died, remove subscriber
-            remove_subscriber sub
-          end
+        @mutex.lock
+        begin
+          mailbox << msg
+          send_message(subscribers, WindUp::ForwardedCall.new(mailbox))
+        ensure
+          @mutex.unlock rescue nil
         end
-        nil
-      end
-
-      def alive?
-        mailbox.alive?
       end
 
       def shutdown
@@ -129,8 +125,8 @@ module WindUp
     end
   end
 
-  Routers.register :scattergather, Router::ScatterGatherFirstCompleted
-  Routers.register :roundrobin, Router::RoundRobin
+  Routers.register :first_avaialble, Router::FirstAvailable
+  Routers.register :round_robin, Router::RoundRobin
   Routers.register :random, Router::Random
-  Routers.register :smallestmailbox, Router::SmallestMailbox
+  Routers.register :smallest_mailbox, Router::SmallestMailbox
 end

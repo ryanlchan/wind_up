@@ -19,9 +19,6 @@ Gem::Specification.new do |gem|
 
   gem.add_development_dependency "rspec"
   gem.add_development_dependency "rake"
-  gem.add_development_dependency "redis"
-  gem.add_development_dependency "connection_pool"
 
   gem.add_dependency "celluloid", "~> 0.14.1"
-  gem.add_dependency "multi_json", "~> 1.7.7"
 end
