@@ -8,11 +8,11 @@ Gem::Specification.new do |gem|
   gem.version       = WindUp::VERSION
   gem.authors       = ["Ryan Chan"]
   gem.email         = ["ryan@ryanlchan.com"]
-  gem.summary       = %q{A drop-in replacement for Celluloid pools using the message API}
-  gem.description   = %q{WindUp is a simple background processing library meant to improve on Celluloid's pools}
+  gem.summary       = %q{Super simple background processing}
+  gem.description   = %q{WindUp enables simple background processing using Celluloid Actors}
   gem.homepage      = "https://github.com/ryanlchan/wind_up"
 
-  gem.files         = `git ls-files`.split($/)
+  gem.files         = Dir['README.md', 'lib/**/*', 'spec/**/*']
   gem.executables   = gem.files.grep(%r{^bin/}).map{ |f| File.basename(f) }
   gem.test_files    = gem.files.grep(%r{^(test|spec|features)/})
   gem.require_paths = ["lib"]
@@ -20,5 +20,5 @@ Gem::Specification.new do |gem|
   gem.add_development_dependency "rspec"
   gem.add_development_dependency "rake"
 
-  gem.add_dependency "celluloid", "~> 0.14.1"
+  gem.add_dependency "wind_up_queue", "~> 0.0.1"
 end

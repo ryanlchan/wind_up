@@ -1,14 +1,9 @@
 require 'spec_helper'
 
 describe WindUp do
-  describe '.logger' do
-    it "delegates get to Celluloid's logger" do
-      WindUp.logger.should == Celluloid.logger
-    end
-
-    it "delegates set to Celluloid's logger" do
-      Celluloid.should_receive(:logger=)
-      WindUp.logger = nil
+  describe '.queue' do
+    it 'creates a delegator queue' do
+      WindUp.queue.should be_a(WindUp::Delegator)
     end
   end
 end

@@ -1,87 +1,67 @@
-Wind Up
-=======
-WindUp is a drop-in replacement for Celluloid's `PoolManager` class. So why
-would you use WindUp?
+WindUp
+===========
 
-* Asynchronous message passing - get all the nice worker-level concurrency
-  Celluloid give you (#sleep, #Celluloid::IO, #future, etc)
-* Separate proxies for QueueManager and queues - no more unexpected behavior
-  between #is_a? and #class
-* Single queue handles multiple workers - Extend WindUp with
-  [MultiWindUp](https://www.github.com/ryanlchan/multi_wind_up) and you can
-  have one pool execute multiple types of workers simultaneously
+WindUp allows you to do super simple background processing using Celluloid
+Actors.
+
+Installation
+------------
+```ruby
+# Gemspec
+gem 'wind_up'
+```
 
 Usage
 -----
 
-WindUp `Queues` are almost drop-in replacements for Celluloid pools.
+WindUp's `Delegator` allows us to use one queue to process multiple job types.
+`Delegator#perform_with` will instantiate a class and run its `#perform`
+method, passing any additional arguments provided.
+
+Create a new `Delegator` queue using the WindUp Queue method. Use
+`Delegator#perform_with` to send tasks to this queue. Asynchronous processing
+is accomplished the same way you would with a WindUp Queue or Celluloid Pool;
+`#sync`, `#async`, and `#future` all continue to work as expected.
 
 ```ruby
-q = AnyCelluloidClass.queue size: 3 # size defaults to number of cores
-q.any_method                # perform synchronously
-q.async.long_running_method # perform asynchronously
-q.future.i_want_this_back   # perform as a future
-```
+# Create a Delegator queue; these are equivalent
+queue = WindUp::Delegator.queue size: 3
+queue = WindUp.queue size: 3
 
-`Queues` use two separate proxies to control `Queue` commands vs
-`QueueManager` commands.
-```ruby
-# .queue returns the proxy for the queue (i.e. workers)
-q = AnyCelluloidClass.queue # => WindUp::QueueProxy(AnyCelluloidClass)
-
-# Get the proxy for the manager from the QueueProxy
-q.__manager__ # => Celluloid::ActorProxy(WindUp::QueueManager)
-
-# Return to the queue from the manager
-q.__manager__.queue # WindUp::QueueProxy(AnyCelluloidClass)
-```
-
-You may store these `Queue` object in the registry as any actor
-```ruby
-Celluloid::Actor[:queue] = q
-```
-
-Changing Routing Behavior (Advanced)
-------------------------------------
-
-WindUp accepts multiple types of routing behavior. Supported behaviors include:
-
-  * :random - Route messages to workers randomly
-  * :round_robin - Route messages to each worker sequentially
-  * :smallest_mailbox - Route messages to the worker with the smallest mailbox
-  * :first_available - Route messages to the first available worker (Default)
-
-To configure your queue to use a specific routing style, specify the routing
-behavior when calling .queue:
-
-```ruby
-# Use a random router
-Klass.queue router: :random
-```
-
-You can specify your own custom routing behavior as well:
-```ruby
-class FirstRouter < WindUp::Router::Base
-  # Returns the next subscriber to route a message to
-  def next_subscriber
-    subscribers.first
+# Create a job class
+class GreetingJob
+  def perform(name = "Bob")
+    "Hello, #{name}!"
   end
 end
 
-# Register this router
-WindUp::Routers.register :first, FirstRouter
+# Send the delayed action to the Delegator queue
+queue.perform_with GreetingJob, "Hurried Harry" # => "Hello, Hurried Harry!", completed synchronously
+queue.async.perform_with GreetingJob, "Mellow Mary" # => nil, work completed in background
+queue.future.perform_with GreetingJob, "Telepathic Tim" # => Celluloid::Future, with value "Hello, Telepathic Tim!"
 
-# Use this router
-q = Klass.queue router: :first
+# Store this queue for later usage
+Celluloid::Actor[:background] = queue
+# Later...
+Celluloid::Actor[:background].async.perform_with GreetingJob, "Tina"
 
 ```
 
-Multiple worker types per queue
--------------------------------
+Tips
+----
 
-This part of WindUp has been extracted to its own gem,
-[MultiWindUp](https://www.github.com/ryanlchan/multi_wind_up).
-WindUp now only contains the pooling implementation.
+* Don't share state from your current thread with your Jobs!
+
+  With WindUp, your jobs will be *eventually* processed, but we have no idea
+  how long it'll be. As such, your jobs and messages should not share state.
+  I.e., don't pass a User object; pass a user.id and recreates the user from
+  the database within your job.
+
+* Use JSON serializable arguments for your jobs
+
+  Not only is it a good way to prevent yourself from accidentally sharing
+  state (see previous point), but if you want to use a persistant job store
+  you cannot pass in any objects that can't be dumped to JSON.
 
 ## Contributing
 
